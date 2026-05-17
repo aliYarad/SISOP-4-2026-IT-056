@@ -9,19 +9,13 @@
 ---
 ### _Soal 1_
 #### _Deskripsi Soal_
-Pada soal 1 diperintahkan untuk membuat program FUSE `kenz_rescue.c` yang menerima argumen `<source_directory>` dan `<mount_directory>` sekaligus membuat file virtual `tujuan.txt`.
+Pada soal 1 diperintahkan untuk membuat program FUSE `kenz_rescue.c` yang menerima argumen `<source_directory>` dan `<mount_directory>`.  Program ini bertindak sebagai filesystem cermin yang meneruskan operasi baca dari direktori `amba_files/` sekaligus menyajikan file virtual `tujuan.txt` yang isinya dibangkitkan secara _on-the-fly_ dengan menggabungkan fragmen koordinat `KOORD:` dari tujuh file log, tanpa memodifikasi file sumber satu byte pun.
 
 #### _Penjelasan Kode_
-Menyimpan path absolut dari direktori sumber (amba_files/) yang akan di-mirror.
+Menyimpan path absolut direktori sumber dan mendefinisikan nama file virtual serta jumlah file sumber yang akan dibaca.
 ```c
 static char source_dir[PATH_MAX];
-```
-Nama file virtual yang hanya ada di mount point, tidak di disk asli.
-```c
 #define VIRTUAL_FILE "tujuan.txt"
-```
-Menentukan jumlah file log yang akan dibaca untuk menyusun koordinat.
-```c                                                                                                                                                                                                              
 #define NUM_SRC_FILES 7
 ```
 Fungsi helper untuk membangun path lengkap ke file di direktori sumber dengan cara menggabungkan `source_dir` dan path relatif dari FUSE.
@@ -31,7 +25,7 @@ static void build_source_path(char *fpath, const char *path)
     snprintf(fpath, PATH_MAX, "%s%s", source_dir, path);
 }
 ```
-`build_virtual_content` membangun isi file `tujuan.txt` secara dinamis (on-the-fly) dengan membaca fragmen KOORD: dari setiap file 1.txt sampai 7.txt secara berurutan, lalu menggabungkannya menjadi satu baris output.
+`build_virtual_content` membangun isi file `tujuan.txt` secara dinamis (_on-the-fly_) tanpa menyimpan apapun ke disk. Dipanggil setiap kali `tujuan.txt` di-stat.
 ```c
 static char *build_virtual_content(size_t *out_size)
 {
@@ -42,7 +36,9 @@ static char *build_virtual_content(size_t *out_size)
     char  *result = malloc(prefix_len + 1);
     if (!result) { *out_size = 0; return NULL; }
     memcpy(result, prefix, prefix_len);
-
+```
+Dimulai dengan mengalokasikan string `"Tujuan Mas Amba: "`. Kemudian untuk setiap file `i` dari 1 sampai 7, file dibuka lalu dicari baris yang mengandung `"KOORD: "`.
+```c
     for (int i = 1; i <= NUM_SRC_FILES; i++) {
         char fpath[PATH_MAX * 2];
         snprintf(fpath, sizeof(fpath), "%s/%d.txt", source_dir, i);
@@ -78,7 +74,6 @@ static char *build_virtual_content(size_t *out_size)
         }
         fclose(f);
     }
-
     result = realloc(result, total + 2);
     if (result) {
         result[total] = '\n';
@@ -90,20 +85,24 @@ static char *build_virtual_content(size_t *out_size)
     return result;
 }
 ```
-Callback FUSE yang dipanggil setiap kali sistem perlu mengambil metadata (seperti ukuran, permission, tipe file) dari sebuah path. Setara dengan syscall `stat()`.
+Callback FUSE yang dipanggil setiap kali sistem perlu mengambil metadata seperti ukuran, permission, dan tipe file dari sebuah path. Setara dengan syscall `stat()`.
 ```c
 static int kenz_getattr(const char *path, struct stat *stbuf,
                         struct fuse_file_info *fi)
 {
     (void) fi;
     memset(stbuf, 0, sizeof(struct stat));
-
+```
+Jika path adalah `/`, dikembalikan sebagai direktori dengan permission 0755.
+```c
     if (strcmp(path, "/") == 0) {
         stbuf->st_mode  = S_IFDIR | 0755;
         stbuf->st_nlink = 2;
         return 0;
     }
-
+```
+Jika path adalah `/tujuan.txt`, dikembalikan sebagai file reguler read-only (0444). Ukurannya dihitung secara dinamis dengan memanggil `build_virtual_content()` agar nilai `st_size` selalu konsisten dengan isi aktualnya.
+```c
     if (strcmp(path, "/" VIRTUAL_FILE) == 0) {
         size_t vsize = 0;
         char  *vcontent = build_virtual_content(&vsize);
@@ -114,7 +113,9 @@ static int kenz_getattr(const char *path, struct stat *stbuf,
         stbuf->st_size  = (off_t)vsize;
         return 0;
     }
-
+```
+Untuk path lainnya di-passthrough ke `lstat()` pada file asli di `source_dir`. Permission write dihapus agar file di mount point tidak bisa dimodifikasi.
+```c
     char fpath[PATH_MAX];
     build_source_path(fpath, path);
 
@@ -127,7 +128,7 @@ static int kenz_getattr(const char *path, struct stat *stbuf,
     return 0;
 }
 ```
-Callback FUSE yang dipanggil saat direktori di-listing (misal `ls`). Mengisi buffer dengan daftar nama file yang ada di mount point.
+Callback FUSE yang dipanggil saat direktori di-listing (misal `ls`). 
 ```c
 static int kenz_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
                         off_t offset, struct fuse_file_info *fi,
@@ -139,7 +140,9 @@ static int kenz_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 
     if (strcmp(path, "/") != 0)
         return -ENOENT;
-
+```
+Menambahkan entri . dan .., lalu membuka `source_dir` dengan `opendir()` dan mengiterasi seluruh isinya untuk dimasukkan ke buffer via `filler()`.
+```c
     filler(buf, ".",  NULL, 0, 0);
     filler(buf, "..", NULL, 0, 0);
 
@@ -151,7 +154,9 @@ static int kenz_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
     while ((de = readdir(dp)) != NULL) {
         if (strcmp(de->d_name, ".")  == 0) continue;
         if (strcmp(de->d_name, "..") == 0) continue;
-
+```
+Setelah semua file asli ditambahkan, secara eksplisit menambahkan `tujuan.txt` sebagai entri virtual.
+```c
         struct stat st;
         memset(&st, 0, sizeof(st));
         st.st_ino  = de->d_ino;
@@ -172,12 +177,19 @@ Callback FUSE yang dipanggil saat sebuah file akan dibuka. Berfungsi sebagai val
 ```c
 static int kenz_open(const char *path, struct fuse_file_info *fi)
 {
+```
+Menolak semua akses selain read-only dengan mengembalikan `-EACCES`.
+```c
     if ((fi->flags & O_ACCMODE) != O_RDONLY)
         return -EACCES;
-
+```
+Jika path adalah `/tujuan.txt`, langsung return 0 karena file virtual tidak memiliki representasi fisik yang perlu dibuka.
+```c
     if (strcmp(path, "/" VIRTUAL_FILE) == 0)
         return 0;
-
+```
+Untuk file lainnya, file asli dibuka di `source_dir` untuk memverifikasi keberadaannya, lalu langsung menutupnya kembali.
+```c
     char fpath[PATH_MAX];
     build_source_path(fpath, path);
 
@@ -195,7 +207,9 @@ static int kenz_read(const char *path, char *buf, size_t size,
                      off_t offset, struct fuse_file_info *fi)
 {
     (void) fi;
-
+```
+Jika path adalah `/tujuan.txt`, memanggil `build_virtual_content()` untuk membangun isi secara dinamis, lalu menyalin sebagian isinya. Setelah selesai, memori dibebaskan dengan `free()`.
+```c
     if (strcmp(path, "/" VIRTUAL_FILE) == 0) {
         size_t   vsize    = 0;
         char    *vcontent = build_virtual_content(&vsize);
@@ -215,7 +229,9 @@ static int kenz_read(const char *path, char *buf, size_t size,
         free(vcontent);
         return (int)bytes_to_copy;
     }
-
+```
+Untuk file lainnya, file asli dibuka di `source_dir` dan membacanya menggunakan `pread()` yang mendukung pembacaan dengan offset tertentu tanpa mengubah posisi file descriptor.
+```c
     char fpath[PATH_MAX];
     build_source_path(fpath, path);
 
@@ -238,7 +254,7 @@ static const struct fuse_operations kenz_oper = {
     .read    = kenz_read,
 };
 ```
-Memvalidasi dua argumen diberikan yaitu`<source_directory>` dan `<mount_directory>` dan memanggil `fuse_main()` dengan struct `kenz_oper` yang berisi pointer ke keempat callback.
+Memvalidasi bahwa dua argumen diberikan, lalu mengonversi `argv[1]` menjadi path absolut menggunakan `realpath()` dan menyimpannya ke `source_dir`.
 ```c
 int main(int argc, char *argv[])
 {
@@ -252,7 +268,9 @@ int main(int argc, char *argv[])
         perror("realpath");
         return 1;
     }
-
+```
+Menggeser array `argv` sehingga `mount_directory` menjadi `argv[1]`. Terakhir, memanggil `fuse_main()` dengan `struct kenz_oper` yang berisi pointer ke keempat callback.
+```c
     for (int i = 1; i < argc - 1; i++) {
         argv[i] = argv[i + 1];
     }
@@ -264,7 +282,12 @@ int main(int argc, char *argv[])
 ```
 
 #### _Output_
-<img width="1471" height="233" alt="Screenshot 2026-05-17 164705" src="https://github.com/user-attachments/assets/fa0e9f50-f5b7-490f-9148-8011d5f9f72f" />
+- Output `cat mnt/1.txt` identik dengan `cat amba_files/1.txt`
+<img width="1470" height="462" alt="Screenshot 2026-05-17 231122" src="https://github.com/user-attachments/assets/aa9e91c0-edda-4c34-bcdf-40d496ea57c3" />
+
+- Gabungan fragmen _on-the-fly_ 
 <img width="1460" height="47" alt="Screenshot 2026-05-17 165012" src="https://github.com/user-attachments/assets/9d6df7a9-bcff-4fc4-a69c-72389348cba8" />
+
+- Hasil `stat mnt/tujuan.txt`
 <img width="1468" height="206" alt="Screenshot 2026-05-17 164928" src="https://github.com/user-attachments/assets/763d8977-9b70-4f67-b7e0-1693ee232917" />
 
