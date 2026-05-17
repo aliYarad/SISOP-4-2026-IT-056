@@ -13,26 +13,26 @@ Pada soal 1 diperintahkan untuk membuat program FUSE `kenz_rescue.c` yang meneri
 
 #### _Penjelasan Kode_
 Menyimpan path absolut dari direktori sumber (amba_files/) yang akan di-mirror.
-```
+```c
 static char source_dir[PATH_MAX];
 ```
 Nama file virtual yang hanya ada di mount point, tidak di disk asli.
-```
+```c
 #define VIRTUAL_FILE "tujuan.txt"
 ```
 Menentukan jumlah file log yang akan dibaca untuk menyusun koordinat.
-```                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             kenz_rescue.c
+```c                                                                                                                                                                                                              
 #define NUM_SRC_FILES 7
 ```
 Fungsi helper untuk membangun path lengkap ke file di direktori sumber dengan cara menggabungkan `source_dir` dan path relatif dari FUSE.
-```
+```c
 static void build_source_path(char *fpath, const char *path)
 {
     snprintf(fpath, PATH_MAX, "%s%s", source_dir, path);
 }
 ```
 `build_virtual_content` membangun isi file `tujuan.txt` secara dinamis (on-the-fly) dengan membaca fragmen KOORD: dari setiap file 1.txt sampai 7.txt secara berurutan, lalu menggabungkannya menjadi satu baris output.
-```
+```c
 static char *build_virtual_content(size_t *out_size)
 {
     const char *prefix = "Tujuan Mas Amba: ";
@@ -91,7 +91,7 @@ static char *build_virtual_content(size_t *out_size)
 }
 ```
 Callback FUSE yang dipanggil setiap kali sistem perlu mengambil metadata (seperti ukuran, permission, tipe file) dari sebuah path. Setara dengan syscall `stat()`.
-```
+```c
 static int kenz_getattr(const char *path, struct stat *stbuf,
                         struct fuse_file_info *fi)
 {
@@ -128,7 +128,7 @@ static int kenz_getattr(const char *path, struct stat *stbuf,
 }
 ```
 Callback FUSE yang dipanggil saat direktori di-listing (misal `ls`). Mengisi buffer dengan daftar nama file yang ada di mount point.
-```
+```c
 static int kenz_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
                         off_t offset, struct fuse_file_info *fi,
                         enum fuse_readdir_flags flags)
@@ -169,7 +169,7 @@ static int kenz_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 }
 ```
 Callback FUSE yang dipanggil saat sebuah file akan dibuka. Berfungsi sebagai validasi sebelum operasi `read` dilakukan.
-```
+```c
 static int kenz_open(const char *path, struct fuse_file_info *fi)
 {
     if ((fi->flags & O_ACCMODE) != O_RDONLY)
@@ -190,7 +190,7 @@ static int kenz_open(const char *path, struct fuse_file_info *fi)
 }
 ```
 Callback FUSE yang dipanggil saat isi file dibaca, misalnya `cat`.
-```
+```c
 static int kenz_read(const char *path, char *buf, size_t size,
                      off_t offset, struct fuse_file_info *fi)
 {
@@ -239,7 +239,7 @@ static const struct fuse_operations kenz_oper = {
 };
 ```
 Memvalidasi dua argumen diberikan yaitu`<source_directory>` dan `<mount_directory>` dan memanggil `fuse_main()` dengan struct `kenz_oper` yang berisi pointer ke keempat callback.
-```
+```c
 int main(int argc, char *argv[])
 {
     if (argc < 3) {
