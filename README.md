@@ -267,6 +267,4 @@ int main(int argc, char *argv[])
 <img width="1471" height="233" alt="Screenshot 2026-05-17 164705" src="https://github.com/user-attachments/assets/fa0e9f50-f5b7-490f-9148-8011d5f9f72f" />
 <img width="1460" height="47" alt="Screenshot 2026-05-17 165012" src="https://github.com/user-attachments/assets/9d6df7a9-bcff-4fc4-a69c-72389348cba8" />
 <img width="1468" height="206" alt="Screenshot 2026-05-17 164928" src="https://github.com/user-attachments/assets/763d8977-9b70-4f67-b7e0-1693ee232917" />
-<img width="1471" height="95" alt="Screenshot 2026-05-17 164853" src="https://github.com/user-attachments/assets/e52a3d47-e979-4f83-9ebb-d6f7d47494d4" />
-<img width="1475" height="210" alt="Screenshot 2026-05-17 164817" src="https://github.com/user-attachments/assets/8316366d-9032-44a3-9897-fd100b6b15b0" />
 
